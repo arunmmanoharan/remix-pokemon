@@ -4,7 +4,7 @@ import {Link as RemixLink, useFetcher, useSearchParams} from '@remix-run/react';
 import Typography from '@mui/material/Typography';
 import Button from "@mui/material/Button";
 import {useEffect, useState} from "react";
-import {Dialog, DialogContent, DialogTitle, IconButton, styled} from "@mui/material";
+import {CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, styled} from "@mui/material";
 import {Close} from "@mui/icons-material";
 import {Pokedex, Pokemon, PokemonsData} from "~/src/types";
 import {DataGrid} from "@mui/x-data-grid";
@@ -23,7 +23,7 @@ export default function Index() {
 
     const [open, setOpen] = useState(false);
     const [currentPokemonIdx, setCurrentPokemonIdx] = useState(0);
-
+    const [recordLocation, setRecordLocation] = useState('');
     const [searchParams, setSearchParams] = useSearchParams();
 
     const pokemonId = searchParams.get('pokemonId') || '1';
@@ -33,16 +33,16 @@ export default function Index() {
     const pokemonsFetcher = useFetcher<PokemonsData>({key:'pokemons'});
     const pokemonFetcher = useFetcher<Pokedex>({key:`pokemon-${pokemonId}`});
 
-    const fetchPokemons = (page=1,pageSize=10) => {
-        const offset = (page-1)*pageSize;
-        pokemonsFetcher.load(`/resources/pokemons?limit=${pageSize}&offset=${offset}`);
+    const fetchPokemons = (page=1,page_size=Number(pageSize)) => {
+        const offset = (page-1)*page_size;
+        pokemonsFetcher.load(`/resources/pokemons?limit=${page_size}&offset=${offset}`);
     }
 
     useEffect(() => {
         fetchPokemons();
         searchParams.set('pokemonId', '1');
         searchParams.set('page', '1');
-        searchParams.set('pageSize', '10');
+        searchParams.set('pageSize', pageSize);
         setSearchParams(searchParams);
     }, []);
 
@@ -56,10 +56,25 @@ export default function Index() {
         setOpen(false);
     };
 
-    const totalCount = pokemonsFetcher.data?.count || 0;
 
-    const totalPageCount = Math.ceil(totalCount / 10);
-
+    const handlePrevRecord = () => {
+        const prevRecord = currentPokemonIdx - 1;
+        if (prevRecord >= 0) {
+            // There is a previous record in the current data set
+            const prevPokemonId = pokemonsFetcher.data?.results[prevRecord].id;
+            searchParams.set('pokemonId', String(prevPokemonId));
+            setSearchParams(searchParams);
+        } else if (Number(page) > 1) {
+            // Need to fetch records from the previous page
+            const newPage = Number(page) - 1;
+            searchParams.set('page', String(newPage));
+            searchParams.set('pokemonId', ''); // Reset pokemonId temporarily
+            setSearchParams(searchParams);
+            setCurrentPokemonIdx(Number(pageSize) - 1); // Set to the last record of the new page
+            setRecordLocation('prev');
+            fetchPokemons(newPage, Number(pageSize));
+        }
+    };
 
     const handleNextRecord = () => {
         const nextRecord = currentPokemonIdx + 1;
@@ -74,14 +89,24 @@ export default function Index() {
             searchParams.set('pokemonId', String(pokemonsFetcher.data?.results[0].id));
             setSearchParams(searchParams);
             setCurrentPokemonIdx(0)
+            setRecordLocation('next');
             fetchPokemons(Number(page)+1, Number(pageSize));
-
         }
     };
 
     useEffect(() => {
-        console.log('pokemonsFetcher', pokemonsFetcher.data)
-    }, [pokemonsFetcher.data]);
+       if(pokemonsFetcher.data) {
+           if(recordLocation === 'next') {
+               searchParams.set('pokemonId', String(pokemonsFetcher.data.results[0].id));
+               setSearchParams(searchParams);
+           }
+           if(recordLocation === 'prev') {
+               const lastRecordId = pokemonsFetcher.data.results[pokemonsFetcher.data.results.length - 1].id;
+               searchParams.set('pokemonId', String(lastRecordId));
+               setSearchParams(searchParams);
+           }
+       }
+    }, [pokemonsFetcher.data, recordLocation]);
 
 
   return (
@@ -91,9 +116,9 @@ export default function Index() {
           <Button onClick={() => setOpen(!open)}>View Pokemons</Button>
       </Typography>
         <Typography variant="h4" component="h1" gutterBottom>
-            Current Pokemon: {pokemonFetcher.data?.name}
+            Current Pokemon: {pokemonsFetcher.state === 'loading' ? <CircularProgress /> : pokemonFetcher.data?.name}
         </Typography>
-        <Button>Prev</Button>
+        <Button onClick={handlePrevRecord}>Prev</Button>
         <Button onClick={handleNextRecord}>Next</Button>
         <PokemonDataGrid open={open} close={handleClose} />
     </React.Fragment>
